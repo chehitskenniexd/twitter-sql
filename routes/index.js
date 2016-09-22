@@ -1,48 +1,46 @@
 'use strict';
 var express = require('express');
 var router = express.Router();
-var tweetBank = require('../tweetBank');
 var client = require('../db/index');
 
 module.exports = function makeRouterWithSockets(io) {
 
-  // a reusable function
-  function respondWithAllTweets(req, res, next) {
-    var allTheTweets = tweetBank.list();
-    res.render('index', {
-      title: 'Twitter.js',
-      tweets: allTheTweets,
-      showForm: true
-    });
-  }
 
   function respondWithDBTweets(req, res, next) {
     // client call
-    client.query('SELECT * FROM Tweets', function (err, result) {
+    client.query('SELECT content, name, pictureurl FROM Tweets t JOIN Users u ON t.userid = u.id', function (err, result) {
       if (err) { return next(err); }
       var tweets = result.rows;
-      console.log(tweets);
-      res.render('index', { 
-        title: 'twitter.js', 
-        tweets: tweets, 
-        showForm: true 
+      res.render('index', {
+        title: 'twitter.js',
+        tweets: tweets,
+        showForm: true
       });
     });
   }
 
   // here we basically treet the root view and tweets view as identical
   router.get('/', respondWithDBTweets);
-  router.get('/tweets', respondWithAllTweets);
+  router.get('/tweets', respondWithDBTweets);
 
   // single-user page
   router.get('/users/:username', function (req, res, next) {
-    var tweetsForName = tweetBank.find({ name: req.params.username });
-    res.render('index', {
-      title: 'Twitter.js',
-      tweets: tweetsForName,
-      showForm: true,
-      username: req.params.username
+     client.query('SELECT content, name, pictureurl FROM Tweets t JOIN Users u ON t.userid = u.id WHERE u.name =$1', [req.params.username], function (err, data){
+      res.render('index', {
+        title: 'Twitter.js',
+        tweets: data.rows,
+        showForm: true,
+      });
     });
+
+    // var tweetsForName = tweetBank.find({ name: req.params.username });
+    // res.render('index', {
+    //   title: 'Twitter.js',
+    //   tweets: tweetsForName,
+    //   showForm: true,
+    //   username: req.params.username
+    // });
+
   });
 
   // single-tweet page
@@ -56,9 +54,33 @@ module.exports = function makeRouterWithSockets(io) {
 
   // create a new tweet
   router.post('/tweets', function (req, res, next) {
-    var newTweet = tweetBank.add(req.body.name, req.body.text);
-    io.sockets.emit('new_tweet', newTweet);
-    res.redirect('/');
+    // function checkId() {
+      client.query('SELECT id FROM Users WHERE name=$1', [req.body.userid], function(err, data){
+        if (err){ return new next(err)};
+        var userId;
+        data != undefined && data.rows != undefined ? userId = data.rows[0].id : userId = undefined;
+        if (userId) {
+          makeTweet(req.body.userid, userId, req.body.content);
+        } else {
+
+        }
+      });
+    // }
+
+    function makeTweet(name, id, content) {
+      client.query('INSERT INTO Tweets(userid, content) VALUES ($1, $2)', [id, content], function(err, data) {
+        var newTweet = {name: name, content: content};
+        postTweet(newTweet);
+    });
+    }
+
+    function postTweet(newTweet) {
+      io.sockets.emit('new_tweet', {name: newTweet.name, content: newTweet.content});
+      res.redirect('/');
+    }
+
+
+
   });
 
   // // replaced this hard-coded route with general static routing in app.js
