@@ -33,14 +33,6 @@ module.exports = function makeRouterWithSockets(io) {
       });
     });
 
-    // var tweetsForName = tweetBank.find({ name: req.params.username });
-    // res.render('index', {
-    //   title: 'Twitter.js',
-    //   tweets: tweetsForName,
-    //   showForm: true,
-    //   username: req.params.username
-    // });
-
   });
 
   // single-tweet page
@@ -52,41 +44,53 @@ module.exports = function makeRouterWithSockets(io) {
     });
   });
 
-  // create a new tweet
+  // Create a new tweet for the user in the db
   router.post('/tweets', function (req, res, next) {
-    // function checkId() {
       client.query('SELECT id FROM Users WHERE name=$1', [req.body.userid], function(err, data){
         if (err){ return new next(err)};
         var userId;
-        data != undefined && data.rows != undefined ? userId = data.rows[0].id : userId = undefined;
+        data && data.rowCount > 1 ? userId = data.rows[0].id : userId = undefined;
+
+        // If user exists in the db, make the tweet
+        // If user doesn't exist, create the user and then make the tweet
         if (userId) {
           makeTweet(req.body.userid, userId, req.body.content);
         } else {
-
+          createUser(req.body.userid, req.body.content);
+          makeNewUserTweet(req.body.userid, req.body.content);
         }
       });
-    // }
 
+    // Create new tweet in the db
     function makeTweet(name, id, content) {
       client.query('INSERT INTO Tweets(userid, content) VALUES ($1, $2)', [id, content], function(err, data) {
         var newTweet = {name: name, content: content};
         postTweet(newTweet);
-    });
+      });
     }
 
+    // Make tweet for new user
+    function makeNewUserTweet(name, content){
+      // Get id of the new user
+      client.query('SELECT id FROM Users WHERE name=$1', [name], function(err, data){
+        // Make new tweet for that new user
+        makeTweet (name, data.rows[0].id, content);
+      });
+
+    }
+
+    // Create new user if the user doesn't exist
+    function createUser (name) {
+      client.query('INSERT INTO USERS(name) VALUES ($1)', [name]);
+
+    }
+    // Post the tweet on the front page
     function postTweet(newTweet) {
       io.sockets.emit('new_tweet', {name: newTweet.name, content: newTweet.content});
       res.redirect('/');
     }
 
-
-
   });
-
-  // // replaced this hard-coded route with general static routing in app.js
-  // router.get('/stylesheets/style.css', function(req, res, next){
-  //   res.sendFile('/stylesheets/style.css', { root: __dirname + '/../public/' });
-  // });
 
   return router;
 }
